@@ -197,11 +197,8 @@ describe("chat view", () => {
           attachments: [
             {
               id: "att-1",
-              kind: "file",
-              name: "note.txt",
-              size: 42,
+              dataUrl: "data:text/plain;base64,bm90ZQ==",
               mimeType: "text/plain",
-              source: "picker",
             },
           ],
         }),
