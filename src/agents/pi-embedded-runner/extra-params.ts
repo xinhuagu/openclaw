@@ -426,10 +426,24 @@ function isAnthropicOAuthApiKey(apiKey: unknown): boolean {
 function createAnthropicBetaHeadersWrapper(
   baseStreamFn: StreamFn | undefined,
   betas: string[],
+  opts?: { skipContext1mForOauth?: boolean },
 ): StreamFn {
   const underlying = baseStreamFn ?? streamSimple;
   return (model, context, options) => {
     const isOauth = isAnthropicOAuthApiKey(options?.apiKey);
+    const requestedContext1m = betas.includes(ANTHROPIC_CONTEXT_1M_BETA);
+    const shouldSkipContext1m =
+      isOauth && requestedContext1m && opts?.skipContext1mForOauth === true;
+
+    const effectiveBetas = shouldSkipContext1m
+      ? betas.filter((beta) => beta !== ANTHROPIC_CONTEXT_1M_BETA)
+      : betas;
+
+    if (shouldSkipContext1m) {
+      log.warn(
+        `ignoring context1m for OAuth token auth on ${model.provider}/${model.id}; explicit model params requested skip`,
+      );
+    }
 
     // Preserve the betas pi-ai's createClient would inject for the given token type.
     // Without this, our options.headers["anthropic-beta"] overwrites the pi-ai
@@ -437,7 +451,7 @@ function createAnthropicBetaHeadersWrapper(
     const piAiBetas = isOauth
       ? (PI_AI_OAUTH_ANTHROPIC_BETAS as readonly string[])
       : (PI_AI_DEFAULT_ANTHROPIC_BETAS as readonly string[]);
-    const allBetas = [...new Set([...piAiBetas, ...betas])];
+    const allBetas = [...new Set([...piAiBetas, ...effectiveBetas])];
     return underlying(model, context, {
       ...options,
       headers: mergeAnthropicBetaHeader(options?.headers, allBetas),
@@ -889,7 +903,10 @@ export function applyExtraParamsToAgent(
     log.debug(
       `applying Anthropic beta header for ${provider}/${modelId}: ${anthropicBetas.join(",")}`,
     );
-    agent.streamFn = createAnthropicBetaHeadersWrapper(agent.streamFn, anthropicBetas);
+    const skipContext1mForOauth = merged?.anthropicContext1mOAuthMode === "skip";
+    agent.streamFn = createAnthropicBetaHeadersWrapper(agent.streamFn, anthropicBetas, {
+      skipContext1mForOauth,
+    });
   }
 
   if (shouldApplySiliconFlowThinkingOffCompat({ provider, modelId, thinkingLevel })) {
