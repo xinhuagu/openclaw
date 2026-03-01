@@ -189,6 +189,22 @@ describe("resolveWhatsAppOutboundTarget", () => {
       expectAllowedForTarget({ allowFrom: undefined, mode: undefined });
     });
 
+    it("bypasses allowList in explicit mode", () => {
+      vi.mocked(normalize.normalizeWhatsAppTarget)
+        .mockReturnValueOnce("+19876543210") // for allowFrom[0] (processed first)
+        .mockReturnValueOnce("+11234567890"); // for 'to' param
+      vi.mocked(normalize.isWhatsAppGroupJid).mockReturnValueOnce(false);
+
+      expectResolutionOk(
+        {
+          to: "+11234567890",
+          allowFrom: ["+19876543210"],
+          mode: "explicit",
+        },
+        "+11234567890",
+      );
+    });
+
     it("enforces allowList in custom mode string", () => {
       mockNormalizedDirectMessage(SECONDARY_TARGET, PRIMARY_TARGET);
       expectDeniedForTarget({ allowFrom: [SECONDARY_TARGET], mode: "broadcast" });
