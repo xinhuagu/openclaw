@@ -46,6 +46,14 @@ export function resolveAgentDeliveryPlan(params: {
   turnSourceAccountId?: string;
   /** Turn-source `threadId` — paired with `turnSourceChannel`. */
   turnSourceThreadId?: string | number;
+  /**
+   * When true, the turn originates from webchat (control UI).  Prevents
+   * fallback to a stale session delivery context so replies stay in the
+   * UI instead of leaking to a previously-active external channel.
+   *
+   * @see https://github.com/openclaw/openclaw/issues/34182
+   */
+  webchatOrigin?: boolean;
 }): AgentDeliveryPlan {
   const requestedRaw =
     typeof params.requestedChannel === "string" ? params.requestedChannel.trim() : "";
@@ -58,9 +66,14 @@ export function resolveAgentDeliveryPlan(params: {
       : undefined;
 
   // Resolve turn-source channel for cross-channel safety.
+  // When the turn originates from webchat (INTERNAL_MESSAGE_CHANNEL), we still
+  // need to prevent fallback to a stale session lastChannel — so we propagate
+  // the internal marker to resolveSessionDeliveryTarget.
   const normalizedTurnSource = params.turnSourceChannel
     ? normalizeMessageChannel(params.turnSourceChannel)
     : undefined;
+  const turnSourceIsInternal =
+    params.webchatOrigin === true || normalizedTurnSource === INTERNAL_MESSAGE_CHANNEL;
   const turnSourceChannel =
     normalizedTurnSource && isDeliverableMessageChannel(normalizedTurnSource)
       ? normalizedTurnSource
@@ -84,6 +97,7 @@ export function resolveAgentDeliveryPlan(params: {
     turnSourceTo,
     turnSourceAccountId,
     turnSourceThreadId,
+    suppressSessionFallback: turnSourceIsInternal,
   });
 
   const resolvedChannel = (() => {

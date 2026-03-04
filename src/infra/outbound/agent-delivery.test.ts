@@ -133,4 +133,22 @@ describe("agent delivery helpers", () => {
     expect(plan.resolvedChannel).toBe("whatsapp");
     expect(plan.resolvedTo).toBeUndefined();
   });
+
+  it("webchatOrigin prevents fallback to stale session delivery context (#34182)", () => {
+    const plan = resolveAgentDeliveryPlan({
+      sessionEntry: {
+        sessionId: "s-webchat",
+        updatedAt: 6,
+        deliveryContext: { channel: "imessage", to: "+8613800138000" },
+      },
+      requestedChannel: undefined,
+      accountId: undefined,
+      wantsDelivery: false,
+      webchatOrigin: true,
+    });
+
+    // Should resolve to internal (webchat), not the stale iMessage channel.
+    expect(plan.resolvedChannel).toBe("webchat");
+    expect(plan.resolvedTo).toBeUndefined();
+  });
 });

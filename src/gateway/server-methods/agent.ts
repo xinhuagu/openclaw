@@ -518,6 +518,12 @@ export const agentHandlers: GatewayRequestHandlers = {
       typeof request.accountId === "string" && request.accountId.trim()
         ? request.accountId.trim()
         : undefined;
+    // Treat "last" as unspecified — it is not an explicit channel and should
+    // not bypass the webchat stale-session guard (#34182).
+    const isWebchatOrigin =
+      (!turnSourceChannel || turnSourceChannel === "last") &&
+      client?.connect != null &&
+      isWebchatConnect(client.connect);
     const deliveryPlan = resolveAgentDeliveryPlan({
       sessionEntry,
       requestedChannel: request.replyChannel ?? request.channel,
@@ -529,6 +535,7 @@ export const agentHandlers: GatewayRequestHandlers = {
       turnSourceTo,
       turnSourceAccountId,
       turnSourceThreadId: explicitThreadId,
+      webchatOrigin: isWebchatOrigin,
     });
 
     let resolvedChannel = deliveryPlan.resolvedChannel;

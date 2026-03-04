@@ -409,7 +409,7 @@ describe("gateway agent handler", () => {
     expect(callArgs.bestEffortDeliver).toBe(false);
   });
 
-  it("keeps origin messageChannel as webchat while delivery channel uses last session channel", async () => {
+  it("webchat origin suppresses stale session channel fallback (#34182)", async () => {
     mockMainSessionEntry({
       sessionId: "existing-session-id",
       lastChannel: "telegram",
@@ -452,7 +452,9 @@ describe("gateway agent handler", () => {
       messageChannel?: string;
       runContext?: { messageChannel?: string };
     };
-    expect(callArgs.channel).toBe("telegram");
+    // Webchat origin should NOT fall back to stale session channel;
+    // replies stay internal (webchat) to prevent cross-channel leakage.
+    expect(callArgs.channel).toBe("webchat");
     expect(callArgs.messageChannel).toBe("webchat");
     expect(callArgs.runContext?.messageChannel).toBe("webchat");
   });

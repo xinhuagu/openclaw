@@ -88,6 +88,15 @@ export function resolveSessionDeliveryTarget(params: {
   turnSourceAccountId?: string;
   /** Turn-source `threadId` — paired with `turnSourceChannel`. */
   turnSourceThreadId?: string | number;
+  /**
+   * When true, suppress fallback to the session's stored lastChannel/lastTo.
+   * Used when the turn originates from a non-deliverable source (e.g. webchat)
+   * to prevent stale session delivery context from routing replies to a
+   * previously-active external channel.
+   *
+   * @see https://github.com/openclaw/openclaw/issues/34182
+   */
+  suppressSessionFallback?: boolean;
 }): SessionDeliveryTarget {
   const context = deliveryContextFromSession(params.entry);
   const sessionLastChannel =
@@ -95,7 +104,10 @@ export function resolveSessionDeliveryTarget(params: {
 
   // When a turn-source channel is provided, use only turn-scoped metadata.
   // Falling back to mutable session fields would re-introduce routing races.
-  const hasTurnSourceChannel = params.turnSourceChannel != null;
+  // When suppressSessionFallback is set, treat it the same as having a turn
+  // source — don't fall back to potentially stale session delivery context.
+  const hasTurnSourceChannel =
+    params.turnSourceChannel != null || params.suppressSessionFallback === true;
   const lastChannel = hasTurnSourceChannel ? params.turnSourceChannel : sessionLastChannel;
   const lastTo = hasTurnSourceChannel ? params.turnSourceTo : context?.to;
   const lastAccountId = hasTurnSourceChannel ? params.turnSourceAccountId : context?.accountId;

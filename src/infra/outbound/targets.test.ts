@@ -665,4 +665,23 @@ describe("resolveSessionDeliveryTarget — cross-channel reply guard (#24152)", 
     expect(resolved.channel).toBe("telegram");
     expect(resolved.to).toBe("+15550000000");
   });
+
+  it("suppresses session fallback when suppressSessionFallback is set (#34182)", () => {
+    // Simulate: webchat turn after an iMessage updated session lastChannel.
+    // Without suppressSessionFallback, replies would leak to iMessage.
+    const resolved = resolveSessionDeliveryTarget({
+      entry: {
+        sessionId: "sess-webchat",
+        updatedAt: 1,
+        lastChannel: "imessage",
+        lastTo: "+8613800138000",
+      },
+      requestedChannel: "last",
+      suppressSessionFallback: true,
+    });
+
+    // Should NOT resolve to the stale iMessage channel.
+    expect(resolved.channel).toBeUndefined();
+    expect(resolved.to).toBeUndefined();
+  });
 });
