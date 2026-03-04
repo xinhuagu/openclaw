@@ -122,6 +122,80 @@ export function isShellWrapperExecutable(token: string): boolean {
   return SHELL_WRAPPER_CANONICAL.has(normalizeExecutableToken(token));
 }
 
+/**
+ * Extract the script file argument from a POSIX shell invocation like
+ * `bash scripts/save_crystal.sh` or `bash -x scripts/save_crystal.sh`.
+ *
+ * Returns `null` when no script file can be identified (e.g. `bash -c "cmd"`,
+ * `bash -s`, or bare `bash`).
+ */
+export function extractShellScriptFileArg(argv: string[]): string | null {
+  if (argv.length < 2) {
+    return null;
+  }
+  const token0 = argv[0]?.trim();
+  if (!token0) {
+    return null;
+  }
+  const base = normalizeExecutableToken(token0);
+  // Only handle POSIX shell wrappers for script-file extraction.
+  if (!POSIX_SHELL_NAMES.has(base)) {
+    return null;
+  }
+  // Walk argv[1..] skipping known option flags. The first positional argument
+  // that does not start with `-` (and is not consumed by `-c`/`--command`) is
+  // the script file.
+  for (let i = 1; i < argv.length; i++) {
+    const token = argv[i]?.trim();
+    if (!token) {
+      continue;
+    }
+    const lower = token.toLowerCase();
+    // If we hit `-c` / `--command` / `-lc`, this is an inline command invocation,
+    // not a script file invocation.
+    if (POSIX_INLINE_COMMAND_FLAGS.has(lower)) {
+      return null;
+    }
+    // Combined short flags containing 'c' (e.g. `-xc`) are also inline commands.
+    if (/^-[^-]*c[^-]*$/i.test(token)) {
+      return null;
+    }
+    // `-s` means "read from stdin"; remaining args are positional, not a script.
+    if (lower === "-s") {
+      return null;
+    }
+    // Combined short flags containing 's' (e.g. `-ls`) also mean stdin read.
+    if (/^-[^-]*s[^-]*$/i.test(token) && !token.includes("c")) {
+      return null;
+    }
+    // `--` terminates options; next arg (if any) is the script file.
+    if (token === "--") {
+      const next = argv[i + 1]?.trim();
+      return next && next.length > 0 ? next : null;
+    }
+    // Skip option flags (single `-` is stdin, treat as no script file).
+    if (token === "-") {
+      return null;
+    }
+    // Flags that consume the next argument as a value.
+    if (SHELL_FLAGS_WITH_VALUE.has(lower) || lower === "--rcfile" || lower === "--init-file") {
+      i++; // skip the value
+      continue;
+    }
+    if (token.startsWith("-")) {
+      continue;
+    }
+    // First positional argument is the script file.
+    return token;
+  }
+  return null;
+}
+
+const POSIX_SHELL_NAMES: ReadonlySet<string> = new Set(POSIX_SHELL_WRAPPER_NAMES);
+
+/** Shell flags that consume the next argv element as a value (not a script file). */
+const SHELL_FLAGS_WITH_VALUE: ReadonlySet<string> = new Set(["-o", "+o"]);
+
 function normalizeRawCommand(rawCommand?: string | null): string | null {
   const trimmed = rawCommand?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;

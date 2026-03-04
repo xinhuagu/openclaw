@@ -20,6 +20,7 @@ import {
 import { isTrustedSafeBinPath } from "./exec-safe-bin-trust.js";
 import {
   extractShellWrapperInlineCommand,
+  extractShellScriptFileArg,
   isDispatchWrapperExecutable,
   isShellWrapperExecutable,
   unwrapKnownShellMultiplexerInvocation,
@@ -221,7 +222,27 @@ function evaluateSegments(
       candidatePath && segment.resolution
         ? { ...segment.resolution, resolvedPath: candidatePath }
         : segment.resolution;
-    const match = matchAllowlist(params.allowlist, candidateResolution);
+    let match = matchAllowlist(params.allowlist, candidateResolution);
+    // When the segment is a shell wrapper invoked with a script file
+    // (e.g. `bash scripts/save_crystal.sh`), also check the script file
+    // path against the allowlist so "always allow" persisted patterns work.
+    if (!match && isShellWrapperSegment(segment)) {
+      const scriptFile = extractShellScriptFileArg(segment.argv);
+      if (scriptFile) {
+        const scriptResolution = resolveCommandResolutionFromArgv(
+          [scriptFile],
+          params.cwd,
+          undefined,
+        );
+        const scriptCandidatePath = resolveAllowlistCandidatePath(scriptResolution, params.cwd);
+        if (scriptResolution && scriptCandidatePath) {
+          match = matchAllowlist(params.allowlist, {
+            ...scriptResolution,
+            resolvedPath: scriptCandidatePath,
+          });
+        }
+      }
+    }
     if (match) {
       matches.push(match);
     }
@@ -382,6 +403,21 @@ function collectAllowAlwaysPatterns(params: {
   }
   const inlineCommand = extractShellWrapperInlineCommand(params.segment.argv);
   if (!inlineCommand) {
+    // No inline command (no -c flag). Check if the shell is invoked with a
+    // script file argument, e.g. `bash scripts/save_crystal.sh`.
+    // In that case, persist the resolved script file path.
+    const scriptFile = extractShellScriptFileArg(params.segment.argv);
+    if (scriptFile) {
+      const scriptResolution = resolveCommandResolutionFromArgv(
+        [scriptFile],
+        params.cwd,
+        params.env,
+      );
+      const scriptPath = resolveAllowlistCandidatePath(scriptResolution, params.cwd);
+      if (scriptPath) {
+        params.out.add(scriptPath);
+      }
+    }
     return;
   }
   const nested = analyzeShellCommand({

@@ -302,4 +302,160 @@ describe("resolveAllowAlwaysPatterns", () => {
       persistedPattern: echo,
     });
   });
+
+  it("persists script file path when bash invokes a script without -c", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    const scriptsDir = path.join(dir, "scripts");
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    const script = makeExecutable(scriptsDir, "save_crystal.sh");
+
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: `bash scripts/save_crystal.sh`,
+          argv: ["bash", "scripts/save_crystal.sh"],
+          resolution: {
+            rawExecutable: "bash",
+            resolvedPath: "/bin/bash",
+            executableName: "bash",
+          },
+        },
+      ],
+      cwd: dir,
+      env: makePathEnv(dir),
+      platform: process.platform,
+    });
+    expect(patterns).toEqual([script]);
+  });
+
+  it("round-trips bash script file: persist then match", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    const scriptsDir = path.join(dir, "scripts");
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    const script = makeExecutable(scriptsDir, "save_crystal.sh");
+    // Include system PATH so that `bash` resolves to the real binary.
+    const env = { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ""}` };
+    const safeBins = resolveSafeBins(undefined);
+
+    // First invocation: derive the persisted pattern.
+    const first = evaluateShellAllowlist({
+      command: "bash scripts/save_crystal.sh",
+      allowlist: [],
+      safeBins,
+      cwd: dir,
+      env,
+      platform: process.platform,
+    });
+    const persisted = resolveAllowAlwaysPatterns({
+      segments: first.segments,
+      cwd: dir,
+      env,
+      platform: process.platform,
+    });
+    expect(persisted).toEqual([script]);
+
+    // Second invocation: the same command should now match the allowlist.
+    const second = evaluateShellAllowlist({
+      command: "bash scripts/save_crystal.sh",
+      allowlist: [{ pattern: script }],
+      safeBins,
+      cwd: dir,
+      env,
+      platform: process.platform,
+    });
+    expect(second.allowlistSatisfied).toBe(true);
+  });
+
+  it("does not persist script path when bash uses -c", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = makeTempDir();
+    const whoami = makeExecutable(dir, "whoami");
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: "bash -c 'whoami'",
+          argv: ["bash", "-c", "whoami"],
+          resolution: {
+            rawExecutable: "bash",
+            resolvedPath: "/bin/bash",
+            executableName: "bash",
+          },
+        },
+      ],
+      cwd: dir,
+      env: makePathEnv(dir),
+      platform: process.platform,
+    });
+    // Should unwrap to the inner command, not treat as script file.
+    expect(patterns).toEqual([whoami]);
+  });
+
+  it("does not persist anything for bash -s (stdin mode)", () => {
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: "bash -s",
+          argv: ["bash", "-s"],
+          resolution: {
+            rawExecutable: "bash",
+            resolvedPath: "/bin/bash",
+            executableName: "bash",
+          },
+        },
+      ],
+      platform: process.platform,
+    });
+    expect(patterns).toEqual([]);
+  });
+
+  it("does not persist anything for bash -s with trailing args", () => {
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: "bash -s foo.sh",
+          argv: ["bash", "-s", "foo.sh"],
+          resolution: {
+            rawExecutable: "bash",
+            resolvedPath: "/bin/bash",
+            executableName: "bash",
+          },
+        },
+      ],
+      platform: process.platform,
+    });
+    expect(patterns).toEqual([]);
+  });
+
+  it("skips -o flag value and persists the actual script file", () => {
+    const dir = makeTempDir();
+    const scriptsDir = path.join(dir, "scripts");
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    const script = path.join(scriptsDir, "deploy.sh");
+    fs.writeFileSync(script, "#!/bin/bash\n", { mode: 0o755 });
+    const patterns = resolveAllowAlwaysPatterns({
+      segments: [
+        {
+          raw: "bash -o pipefail scripts/deploy.sh",
+          argv: ["bash", "-o", "pipefail", "scripts/deploy.sh"],
+          resolution: {
+            rawExecutable: "bash",
+            resolvedPath: "/bin/bash",
+            executableName: "bash",
+          },
+        },
+      ],
+      cwd: dir,
+      env: makePathEnv(dir),
+      platform: process.platform,
+    });
+    expect(patterns).toEqual([script]);
+  });
 });
