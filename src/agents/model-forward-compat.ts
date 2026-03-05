@@ -168,15 +168,29 @@ function resolveAnthropicSonnet46ForwardCompatModel(
   });
 }
 
-// gemini-3.1-pro-preview / gemini-3.1-flash-preview are not present in pi-ai's built-in
-// google-gemini-cli catalog yet. Clone the nearest gemini-3 template so users don't get
-// "Unknown model" errors when Google Gemini CLI gains new minor-version models.
+// gemini-3.1-pro-preview / gemini-3.1-flash-preview / gemini-3.1-flash-lite-preview
+// are not present in pi-ai's built-in catalog for all Google provider variants.
+// Clone the nearest gemini-3 template so users don't get "Unknown model" errors
+// when Google releases new minor-version models.
+//
+// This must handle all Google provider variants ("google", "google-gemini-cli",
+// "google-vertex", "google-antigravity") so that model overrides via
+// sessions_spawn (which use the user-facing "google" provider) also resolve
+// correctly instead of silently falling back to the default provider (#36134).
+const GOOGLE_GEMINI_FORWARD_COMPAT_PROVIDERS = new Set([
+  "google",
+  "google-gemini-cli",
+  "google-vertex",
+  "google-antigravity",
+]);
+
 function resolveGoogleGeminiCli31ForwardCompatModel(
   provider: string,
   modelId: string,
   modelRegistry: ModelRegistry,
 ): Model<Api> | undefined {
-  if (normalizeProviderId(provider) !== "google-gemini-cli") {
+  const normalizedProvider = normalizeProviderId(provider);
+  if (!GOOGLE_GEMINI_FORWARD_COMPAT_PROVIDERS.has(normalizedProvider)) {
     return undefined;
   }
   const trimmed = modelId.trim();
@@ -191,13 +205,30 @@ function resolveGoogleGeminiCli31ForwardCompatModel(
     return undefined;
   }
 
-  return cloneFirstTemplateModel({
-    normalizedProvider: "google-gemini-cli",
-    trimmedModelId: trimmed,
-    templateIds: [...templateIds],
-    modelRegistry,
-    patch: { reasoning: true },
-  });
+  // Try the caller's provider first, then fall back to other Google variants.
+  // The template model may live under a different Google provider in the
+  // pi-ai built-in catalog (e.g. "google-gemini-cli") while the user
+  // specified the bare "google" provider via sessions_spawn (#36134).
+  const providersToTry = [
+    normalizedProvider,
+    ...Array.from(GOOGLE_GEMINI_FORWARD_COMPAT_PROVIDERS).filter((p) => p !== normalizedProvider),
+  ];
+  for (const candidateProvider of providersToTry) {
+    const result = cloneFirstTemplateModel({
+      normalizedProvider: candidateProvider,
+      trimmedModelId: trimmed,
+      templateIds: [...templateIds],
+      modelRegistry,
+      patch: { reasoning: true },
+    });
+    if (result) {
+      // Re-stamp the provider to match what the caller requested so the
+      // returned model routes through the correct auth/transport layer.
+      (result as { provider: string }).provider = normalizedProvider;
+      return result;
+    }
+  }
+  return undefined;
 }
 
 // Z.ai's GLM-5 may not be present in pi-ai's built-in model catalog yet.

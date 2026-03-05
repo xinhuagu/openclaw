@@ -86,4 +86,43 @@ describe("pi embedded model e2e smoke", () => {
     expect(result.model).toBeUndefined();
     expect(result.error).toBe("Unknown model: google-gemini-cli/gemini-4-unknown");
   });
+
+  it("builds a forward-compat fallback for google/gemini-3.1-flash-lite-preview (#36134)", () => {
+    mockGoogleGeminiCliFlashTemplateModel();
+
+    const result = resolveModel("google", "gemini-3.1-flash-lite-preview", "/tmp/agent");
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      id: "gemini-3.1-flash-lite-preview",
+      name: "gemini-3.1-flash-lite-preview",
+      provider: "google",
+      reasoning: true,
+    });
+  });
+
+  it("builds a forward-compat fallback for google/gemini-3.1-pro-preview (#36134)", () => {
+    mockGoogleGeminiCliProTemplateModel();
+
+    const result = resolveModel("google", "gemini-3.1-pro-preview", "/tmp/agent");
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      id: "gemini-3.1-pro-preview",
+      name: "gemini-3.1-pro-preview",
+      provider: "google",
+      reasoning: true,
+    });
+  });
+
+  it("builds a forward-compat fallback for google-vertex/gemini-3.1-flash-preview (#36134)", () => {
+    mockGoogleGeminiCliFlashTemplateModel();
+
+    const result = resolveModel("google-vertex", "gemini-3.1-flash-preview", "/tmp/agent");
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      id: "gemini-3.1-flash-preview",
+      name: "gemini-3.1-flash-preview",
+      provider: "google-vertex",
+      reasoning: true,
+    });
+  });
 });
