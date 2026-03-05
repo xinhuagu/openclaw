@@ -65,6 +65,14 @@ export async function recordInboundSession(params: {
     return;
   }
   const targetSessionKey = normalizeSessionStoreKey(update.sessionKey);
+  // When dmScope=per-channel-peer, the inbound session key differs from the
+  // main session key.  Updating the main session's delivery context would
+  // contaminate it with channel-specific routing, causing replies from webchat
+  // or other surfaces to be mis-routed to the originating channel.  Skip the
+  // update when the inbound session is not the target (main) session.
+  if (targetSessionKey !== canonicalSessionKey) {
+    return;
+  }
   await updateLastRoute({
     storePath,
     sessionKey: targetSessionKey,

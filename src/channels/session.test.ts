@@ -22,7 +22,7 @@ describe("recordInboundSession", () => {
     updateLastRouteMock.mockClear();
   });
 
-  it("does not pass ctx when updating a different session key", async () => {
+  it("skips last-route update when inbound session differs from target (per-channel-peer)", async () => {
     const { recordInboundSession } = await import("./session.js");
 
     await recordInboundSession({
@@ -37,16 +37,9 @@ describe("recordInboundSession", () => {
       onRecordError: vi.fn(),
     });
 
-    expect(updateLastRouteMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionKey: "agent:main:main",
-        ctx: undefined,
-        deliveryContext: expect.objectContaining({
-          channel: "telegram",
-          to: "telegram:1234",
-        }),
-      }),
-    );
+    // When the inbound session key differs from the update target (main session),
+    // the update is skipped to prevent cross-channel delivery context contamination.
+    expect(updateLastRouteMock).not.toHaveBeenCalled();
   });
 
   it("passes ctx when updating the same session key", async () => {
