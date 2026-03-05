@@ -60,6 +60,45 @@ describe("resolveAcpClientSpawnEnv", () => {
     });
     expect(env.OPENCLAW_SHELL).toBe("acp-client");
   });
+
+  it("strips OPENAI_API_KEY so ACP harnesses use their own auth", () => {
+    const env = resolveAcpClientSpawnEnv({
+      PATH: "/usr/bin",
+      OPENAI_API_KEY: "sk-secret",
+      HOME: "/home/user",
+    });
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.HOME).toBe("/home/user");
+  });
+
+  it("strips all sensitive provider keys from child env", () => {
+    const env = resolveAcpClientSpawnEnv({
+      PATH: "/usr/bin",
+      ANTHROPIC_API_KEY: "sk-ant-secret",
+      OPENAI_API_KEY: "sk-secret",
+      GEMINI_API_KEY: "gemini-secret",
+      OPENROUTER_API_KEY: "or-secret",
+      DISCORD_BOT_TOKEN: "discord-token",
+      TELEGRAM_BOT_TOKEN: "tg-token",
+      SLACK_BOT_TOKEN: "xoxb-token",
+      OPENCLAW_GATEWAY_TOKEN: "gw-token",
+      AWS_SECRET_ACCESS_KEY: "aws-secret",
+      USER: "openclaw",
+    });
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.GEMINI_API_KEY).toBeUndefined();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(env.DISCORD_BOT_TOKEN).toBeUndefined();
+    expect(env.TELEGRAM_BOT_TOKEN).toBeUndefined();
+    expect(env.SLACK_BOT_TOKEN).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    // Gateway credentials are preserved — ACP child server needs them for auth
+    expect(env.OPENCLAW_GATEWAY_TOKEN).toBe("gw-token");
+    expect(env.USER).toBe("openclaw");
+    expect(env.OPENCLAW_SHELL).toBe("acp-client");
+  });
 });
 
 describe("resolveAcpClientSpawnInvocation", () => {

@@ -346,10 +346,39 @@ function buildServerArgs(opts: AcpClientOptions): string[] {
   return args;
 }
 
+/**
+ * Sensitive env-var patterns stripped from ACP child process environments.
+ * Prevents skill-injected API keys (e.g. OPENAI_API_KEY from openai-whisper-api)
+ * from leaking into ACP harnesses like Codex CLI, which would silently switch
+ * from OAuth to API-key billing.
+ */
+const ACP_BLOCKED_ENV_PATTERNS: ReadonlyArray<RegExp> = [
+  /^ANTHROPIC_API_KEY$/i,
+  /^OPENAI_API_KEY$/i,
+  /^GEMINI_API_KEY$/i,
+  /^OPENROUTER_API_KEY$/i,
+  /^MINIMAX_API_KEY$/i,
+  /^ELEVENLABS_API_KEY$/i,
+  /^TELEGRAM_BOT_TOKEN$/i,
+  /^DISCORD_BOT_TOKEN$/i,
+  /^SLACK_(BOT|APP)_TOKEN$/i,
+  // Note: OPENCLAW_GATEWAY_TOKEN/PASSWORD are intentionally kept — the ACP
+  // child server needs them for gateway handshake auth.
+  /^AWS_(SECRET_ACCESS_KEY|SECRET_KEY|SESSION_TOKEN)$/i,
+];
+
 export function resolveAcpClientSpawnEnv(
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  return { ...baseEnv, OPENCLAW_SHELL: "acp-client" };
+  const filtered: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(baseEnv)) {
+    if (ACP_BLOCKED_ENV_PATTERNS.some((p) => p.test(key))) {
+      continue;
+    }
+    filtered[key] = value;
+  }
+  filtered.OPENCLAW_SHELL = "acp-client";
+  return filtered;
 }
 
 type AcpSpawnRuntime = {
