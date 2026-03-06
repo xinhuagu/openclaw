@@ -448,7 +448,7 @@ describe("isSecureWebSocketUrl", () => {
     }
   });
 
-  it("allows private ws:// only when opt-in is enabled", () => {
+  it("allows any ws:// URL when opt-in is enabled (break-glass)", () => {
     const allowedWhenOptedIn = [
       "ws://10.0.0.5:18789",
       "ws://172.16.0.1:18789",
@@ -457,22 +457,14 @@ describe("isSecureWebSocketUrl", () => {
       "ws://169.254.10.20:18789",
       "ws://[fc00::1]:18789",
       "ws://[fe80::1]:18789",
+      // DNS hostnames that resolve to private IPs in container networks
+      "ws://openclaw-gateway.ai:18789",
+      "ws://gateway.default.svc.cluster.local:18789",
+      "ws://my-gateway:18789",
     ];
 
     for (const input of allowedWhenOptedIn) {
       expect(isSecureWebSocketUrl(input, { allowPrivateWs: true }), input).toBe(true);
-    }
-  });
-
-  it("still rejects non-unicast IPv6 ws:// even when opt-in is enabled", () => {
-    const disallowedWhenOptedIn = [
-      "ws://[::]:18789",
-      "ws://[0:0::0]:18789",
-      "ws://[ff02::1]:18789",
-    ];
-
-    for (const input of disallowedWhenOptedIn) {
-      expect(isSecureWebSocketUrl(input, { allowPrivateWs: true }), input).toBe(false);
     }
   });
 });

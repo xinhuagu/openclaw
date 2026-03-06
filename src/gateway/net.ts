@@ -434,8 +434,11 @@ export function isSecureWebSocketUrl(
     return true;
   }
   // Optional break-glass for trusted private-network overlays.
+  // When the user explicitly opts in, allow any ws:// URL — DNS hostnames
+  // (e.g. Kubernetes service names) cannot be validated by IP range checks
+  // since we only see the hostname string, not the resolved address.
   if (opts?.allowPrivateWs) {
-    return isPrivateOrLoopbackHost(parsed.hostname);
+    return true;
   }
   return false;
 }
