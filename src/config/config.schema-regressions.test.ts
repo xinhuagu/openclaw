@@ -184,4 +184,40 @@ describe("config schema regressions", () => {
 
     expect(res.ok).toBe(false);
   });
+
+  it("accepts telegram topic agentId for per-topic agent routing (#35399)", () => {
+    const res = validateConfigObject({
+      channels: {
+        telegram: {
+          groups: {
+            "-1001234567890": {
+              topics: {
+                "1": { agentId: "main" },
+                "3": { agentId: "coder" },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("accepts telegram threadBindings with spawnAcpSessions", () => {
+    const res = validateConfigObject({
+      channels: {
+        telegram: {
+          threadBindings: {
+            enabled: true,
+            spawnAcpSessions: true,
+            idleHours: 24,
+            maxAgeHours: 72,
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
 });
