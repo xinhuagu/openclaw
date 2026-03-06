@@ -40,7 +40,7 @@ describe("formatBonjourInstanceName", () => {
   test("handles multi-byte UTF-8 characters without splitting them", () => {
     // Each CJK character is 3 bytes in UTF-8; create a name that would
     // exceed 63 bytes when suffixed.
-    const cjkName = "测".repeat(20); // 60 bytes as raw, 70 with suffix
+    const cjkName = "测".repeat(20); // 60 bytes as raw, 71 with suffix
     const result = formatBonjourInstanceName(cjkName);
     const byteLength = new TextEncoder().encode(result).byteLength;
     expect(byteLength).toBeLessThanOrEqual(63);

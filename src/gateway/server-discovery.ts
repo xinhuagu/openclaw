@@ -19,7 +19,7 @@ export type ResolveBonjourCliPathOptions = {
  */
 const MAX_MDNS_LABEL_BYTES = 63;
 
-function truncateToMdnsLabel(name: string): string {
+export function truncateToMdnsLabel(name: string): string {
   const encoder = new TextEncoder();
   if (encoder.encode(name).byteLength <= MAX_MDNS_LABEL_BYTES) {
     return name;

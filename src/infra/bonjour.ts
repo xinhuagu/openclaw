@@ -1,3 +1,4 @@
+import { truncateToMdnsLabel } from "../gateway/server-discovery.js";
 import { logDebug, logWarn } from "../logger.js";
 import { getLogger } from "../logging.js";
 import { ignoreCiaoCancellationRejection } from "./bonjour-ciao.js";
@@ -106,12 +107,7 @@ export async function startGatewayBonjourAdvertiser(
   // mDNS hostnames are single DNS labels limited to 63 bytes (RFC 1035 §2.3.4).
   // Container environments (e.g. Kubernetes) can produce hostnames that exceed
   // this limit, causing @homebridge/ciao to throw and crash the gateway.
-  const encoder = new TextEncoder();
-  let hostname = hostnameLabel;
-  while (encoder.encode(hostname).byteLength > 63) {
-    hostname = hostname.slice(0, -1);
-  }
-  hostname = hostname.trimEnd() || "openclaw";
+  const hostname = truncateToMdnsLabel(hostnameLabel) || "openclaw";
   const instanceName =
     typeof opts.instanceName === "string" && opts.instanceName.trim()
       ? opts.instanceName.trim()
