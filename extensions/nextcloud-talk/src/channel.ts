@@ -12,7 +12,7 @@ import {
   type OpenClawConfig,
   type ChannelSetupInput,
 } from "openclaw/plugin-sdk/nextcloud-talk";
-import { waitForAbortSignal } from "../../../src/infra/abort-signal.js";
+import { waitForAbortSignal } from "openclaw/plugin-sdk/nextcloud-talk";
 import {
   listNextcloudTalkAccountIds,
   resolveDefaultNextcloudTalkAccountId,
