@@ -591,4 +591,16 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
       }),
     );
   });
+
+  it("sets disableBlockStreaming to true in replyOptions", async () => {
+    const result = await createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: {} as never,
+      chatId: "oc_123",
+      replyToMessageId: "om_456",
+    });
+
+    expect(result.replyOptions.disableBlockStreaming).toBe(true);
+  });
 });
