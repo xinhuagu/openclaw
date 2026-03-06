@@ -322,14 +322,16 @@ export function isValidIPv4(host: string): boolean {
  * Note: 0.0.0.0 and :: are NOT loopback - they bind to all interfaces.
  */
 export function isLoopbackHost(host: string): boolean {
-  const parsed = parseHostForAddressChecks(host);
-  if (!parsed) {
+  if (!host) {
     return false;
   }
-  if (parsed.isLocalhost) {
+  const h = host.trim().toLowerCase();
+  if (h === "localhost") {
     return true;
   }
-  return isLoopbackAddress(parsed.unbracketedHost);
+  // Handle bracketed IPv6 addresses like [::1]
+  const unbracket = h.startsWith("[") && h.endsWith("]") ? h.slice(1, -1) : h;
+  return isLoopbackAddress(unbracket);
 }
 
 /**
@@ -347,54 +349,31 @@ export function isLocalishHost(hostHeader?: string): boolean {
 
 /**
  * Check if a hostname or IP refers to a private or loopback address.
- * Handles the same hostname formats as isLoopbackHost, but also accepts
- * RFC 1918, link-local, CGNAT, and IPv6 ULA/link-local addresses.
+ * Handles: localhost, 127.x.x.x, ::1, [::1], RFC 1918, CGNAT, link-local,
+ * IPv6 ULA/link-local. Rejects unspecified (::) and multicast (ff00::/8).
  */
 export function isPrivateOrLoopbackHost(host: string): boolean {
-  const parsed = parseHostForAddressChecks(host);
-  if (!parsed) {
+  if (!host) {
     return false;
   }
-  if (parsed.isLocalhost) {
+  const h = host.trim().toLowerCase();
+  if (h === "localhost") {
     return true;
   }
-  const normalized = normalizeIp(parsed.unbracketedHost);
+  // Handle bracketed IPv6 addresses like [::1]
+  const unbracket = h.startsWith("[") && h.endsWith("]") ? h.slice(1, -1) : h;
+  const normalized = normalizeIp(unbracket);
   if (!normalized || !isPrivateOrLoopbackAddress(normalized)) {
     return false;
   }
-  // isPrivateOrLoopbackAddress reuses SSRF-blocking ranges for IPv6, which
-  // include unspecified (::) and multicast (ff00::/8). Exclude these —
-  // they are not private/loopback unicast endpoints. (Multicast is UDP-only
-  // so TCP/WebSocket connections would fail regardless.)
+  // Exclude unspecified (::) and multicast (ff00::/8) — they are not
+  // private/loopback unicast endpoints.
   if (net.isIP(normalized) === 6) {
-    if (normalized.startsWith("ff")) {
-      return false;
-    }
-    if (normalized === "::") {
+    if (normalized === "::" || normalized.startsWith("ff")) {
       return false;
     }
   }
   return true;
-}
-
-function parseHostForAddressChecks(
-  host: string,
-): { isLocalhost: boolean; unbracketedHost: string } | null {
-  if (!host) {
-    return null;
-  }
-  const normalizedHost = host.trim().toLowerCase();
-  if (normalizedHost === "localhost") {
-    return { isLocalhost: true, unbracketedHost: normalizedHost };
-  }
-  return {
-    isLocalhost: false,
-    // Handle bracketed IPv6 addresses like [::1]
-    unbracketedHost:
-      normalizedHost.startsWith("[") && normalizedHost.endsWith("]")
-        ? normalizedHost.slice(1, -1)
-        : normalizedHost,
-  };
 }
 
 /**
@@ -402,18 +381,14 @@ function parseHostForAddressChecks(
  *
  * Returns true if the URL is secure for transmitting data:
  * - wss:// (TLS) is always secure
- * - ws:// is secure only for loopback addresses by default
- * - optional break-glass: private ws:// can be enabled for trusted networks
+ * - ws:// is secure for loopback addresses by default
+ * - optional break-glass: when allowPrivateWs is set, ws:// is also allowed
+ *   for private/loopback IPs and DNS hostnames (which cannot be validated
+ *   by IP range checks at configuration time)
  *
- * All other ws:// URLs are considered insecure because both credentials
- * AND chat/conversation data would be exposed to network interception.
+ * Public IP ws:// URLs are always rejected, even with the break-glass flag.
  */
-export function isSecureWebSocketUrl(
-  url: string,
-  opts?: {
-    allowPrivateWs?: boolean;
-  },
-): boolean {
+export function isSecureWebSocketUrl(url: string, opts?: { allowPrivateWs?: boolean }): boolean {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -429,16 +404,33 @@ export function isSecureWebSocketUrl(
     return false;
   }
 
-  // Default policy stays strict: loopback-only plaintext ws://.
+  // ws:// is always allowed for loopback addresses
   if (isLoopbackHost(parsed.hostname)) {
     return true;
   }
-  // Optional break-glass for trusted private-network overlays.
-  // When the user explicitly opts in, allow any ws:// URL — DNS hostnames
-  // (e.g. Kubernetes service names) cannot be validated by IP range checks
-  // since we only see the hostname string, not the resolved address.
-  if (opts?.allowPrivateWs) {
+
+  if (!opts?.allowPrivateWs) {
+    return false;
+  }
+
+  // Break-glass: allow private/loopback IPs
+  if (isPrivateOrLoopbackHost(parsed.hostname)) {
     return true;
   }
+
+  // Allow DNS hostnames (non-IP) — common in Docker/Kubernetes service
+  // discovery (e.g. openclaw-gateway.default.svc.cluster.local).
+  // We cannot resolve these to IPs at config time, and the user has
+  // explicitly opted in via the env var.
+  // Note: URL.hostname keeps brackets for IPv6 (e.g. [::]), so strip them.
+  const unbracket =
+    parsed.hostname.startsWith("[") && parsed.hostname.endsWith("]")
+      ? parsed.hostname.slice(1, -1)
+      : parsed.hostname;
+  if (net.isIP(unbracket) === 0) {
+    return true;
+  }
+
+  // Explicit public IP addresses are always rejected
   return false;
 }
