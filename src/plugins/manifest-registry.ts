@@ -229,11 +229,20 @@ export function loadPluginManifestRegistry(params: {
         }
         continue;
       }
+
+      // Different directories, same plugin id.  When the duplicates come
+      // from different origin tiers (e.g. bundled + global installed via
+      // `openclaw configure`) this is expected — the loader will pick the
+      // right one.  Only warn when both share the *same* origin, which
+      // signals an actual misconfiguration.
+      const sameOriginTier = candidate.origin === existing.candidate.origin;
       diagnostics.push({
-        level: "warn",
+        level: sameOriginTier ? "warn" : "info",
         pluginId: manifest.id,
         source: candidate.source,
-        message: `duplicate plugin id detected; later plugin may be overridden (${candidate.source})`,
+        message: sameOriginTier
+          ? `duplicate plugin id detected; later plugin may be overridden (${candidate.source})`
+          : `plugin "${manifest.id}" found in multiple locations (${existing.candidate.origin} + ${candidate.origin}); the loader will resolve precedence`,
       });
     } else {
       seenIds.set(manifest.id, { candidate, recordIndex: records.length });

@@ -130,7 +130,7 @@ afterEach(() => {
 });
 
 describe("loadPluginManifestRegistry", () => {
-  it("emits duplicate warning for truly distinct plugins with same id", () => {
+  it("emits info (not warn) for distinct plugins with same id but different origins", () => {
     const dirA = makeTempDir();
     const dirB = makeTempDir();
     const manifest = { id: "test-plugin", configSchema: { type: "object" } };
@@ -150,7 +150,44 @@ describe("loadPluginManifestRegistry", () => {
       }),
     ];
 
-    expect(countDuplicateWarnings(loadRegistry(candidates))).toBe(1);
+    const registry = loadRegistry(candidates);
+    // No warn-level duplicate diagnostics — cross-origin duplicates are info.
+    expect(countDuplicateWarnings(registry)).toBe(0);
+    // Both records are kept (the loader handles final dedup).
+    expect(registry.plugins.filter((p) => p.id === "test-plugin")).toHaveLength(2);
+    // An info-level diagnostic is emitted.
+    expect(
+      registry.diagnostics.some(
+        (d) =>
+          d.level === "info" &&
+          d.pluginId === "test-plugin" &&
+          d.message?.includes("multiple locations"),
+      ),
+    ).toBe(true);
+  });
+
+  it("emits warn for distinct plugins with same id and same origin", () => {
+    const dirA = makeTempDir();
+    const dirB = makeTempDir();
+    const manifest = { id: "dup-origin", configSchema: { type: "object" } };
+    writeManifest(dirA, manifest);
+    writeManifest(dirB, manifest);
+
+    const candidates: PluginCandidate[] = [
+      createPluginCandidate({
+        idHint: "dup-origin",
+        rootDir: dirA,
+        origin: "global",
+      }),
+      createPluginCandidate({
+        idHint: "dup-origin",
+        rootDir: dirB,
+        origin: "global",
+      }),
+    ];
+
+    const registry = loadRegistry(candidates);
+    expect(countDuplicateWarnings(registry)).toBe(1);
   });
 
   it("suppresses duplicate warning when candidates share the same physical directory via symlink", () => {
