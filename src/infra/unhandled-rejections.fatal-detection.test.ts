@@ -111,6 +111,11 @@ describe("installUnhandledRejectionHandler - fatal detection", () => {
         }),
       ];
 
+      // Wrapped fetch-failed (e.g. Discord: "Failed to get gateway information from Discord: fetch failed")
+      transientCases.push(
+        new Error("Failed to get gateway information from Discord: fetch failed"),
+      );
+
       for (const transientErr of transientCases) {
         expectExitCodeFromUnhandled(transientErr, []);
       }
