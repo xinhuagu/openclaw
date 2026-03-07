@@ -65,8 +65,17 @@ const TRANSIENT_NETWORK_MESSAGE_SNIPPETS = [
   "ssl routines",
   "packet length too long",
   "write eproto",
-  "fetch failed",
 ];
+
+function isWrappedFetchFailedMessage(message: string): boolean {
+  if (message === "fetch failed") {
+    return true;
+  }
+
+  // Keep wrapped variants (for example "...: fetch failed") while avoiding broad
+  // matches like "Web fetch failed (404): ..." that are not transport failures.
+  return /:\s*fetch failed$/.test(message);
+}
 
 function getErrorCause(err: unknown): unknown {
   if (!err || typeof err !== "object") {
@@ -171,6 +180,9 @@ export function isTransientNetworkError(err: unknown): boolean {
       continue;
     }
     if (TRANSIENT_NETWORK_MESSAGE_CODE_RE.test(message)) {
+      return true;
+    }
+    if (isWrappedFetchFailedMessage(message)) {
       return true;
     }
     if (TRANSIENT_NETWORK_MESSAGE_SNIPPETS.some((snippet) => message.includes(snippet))) {

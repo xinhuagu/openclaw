@@ -130,6 +130,11 @@ describe("isTransientNetworkError", () => {
     expect(isTransientNetworkError(error)).toBe(true);
   });
 
+  it("returns false for non-network fetch-failed wrappers from tools", () => {
+    const error = new Error("Web fetch failed (404): Not Found");
+    expect(isTransientNetworkError(error)).toBe(false);
+  });
+
   it("returns true for TLS/SSL transient message snippets", () => {
     expect(isTransientNetworkError(new Error("write EPROTO 00A8B0C9:error"))).toBe(true);
     expect(
