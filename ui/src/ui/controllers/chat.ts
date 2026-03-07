@@ -4,9 +4,33 @@ import type { ChatAttachment } from "../ui-types.ts";
 import { generateUUID } from "../uuid.ts";
 
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
+const SILENT_REPLY_TOKEN = "NO_REPLY";
 
 function isSilentReplyStream(text: string): boolean {
   return SILENT_REPLY_PATTERN.test(text);
+}
+
+/**
+ * Detect partial silent-reply tokens during streaming (e.g. "NO" before "NO_REPLY" arrives).
+ * Mirrors the server-side `isSilentReplyPrefixText` logic from `auto-reply/tokens.ts`.
+ */
+function isSilentReplyPrefix(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed || trimmed.length < 2) {
+    return false;
+  }
+  // Only suppress uppercase fragments to avoid hiding natural language like "No..."
+  if (trimmed !== trimmed.toUpperCase()) {
+    return false;
+  }
+  if (/[^A-Z_]/.test(trimmed)) {
+    return false;
+  }
+  if (trimmed.includes("_")) {
+    return SILENT_REPLY_TOKEN.startsWith(trimmed);
+  }
+  // Allow bare "NO" as a known prefix of NO_REPLY
+  return trimmed === "NO";
 }
 /** Client-side defense-in-depth: detect assistant messages whose text is purely NO_REPLY. */
 function isAssistantSilentReply(message: unknown): boolean {
@@ -265,7 +289,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
 
   if (payload.state === "delta") {
     const next = extractText(payload.message);
-    if (typeof next === "string" && !isSilentReplyStream(next)) {
+    if (typeof next === "string" && !isSilentReplyStream(next) && !isSilentReplyPrefix(next)) {
       const current = state.chatStream ?? "";
       if (!current || next.length >= current.length) {
         state.chatStream = next;

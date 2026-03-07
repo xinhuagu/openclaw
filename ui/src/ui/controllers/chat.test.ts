@@ -70,6 +70,59 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBe("Hello");
   });
 
+  it("ignores partial NO_REPLY prefix 'NO' during delta streaming", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "delta",
+      message: { role: "assistant", content: [{ type: "text", text: "NO" }] },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("delta");
+    // "NO" should not leak into the stream — it's a prefix of NO_REPLY
+    expect(state.chatStream).toBeNull();
+  });
+
+  it("ignores partial NO_REPLY prefix 'NO_R' during delta streaming", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "delta",
+      message: { role: "assistant", content: [{ type: "text", text: "NO_R" }] },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("delta");
+    expect(state.chatStream).toBeNull();
+  });
+
+  it("does not suppress lowercase 'no' or 'Nothing' as delta prefix", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "delta",
+      message: { role: "assistant", content: [{ type: "text", text: "Nothing to report" }] },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("delta");
+    // Real content should still flow through
+    expect(state.chatStream).toBe("Nothing to report");
+  });
+
   it("appends final payload from another run without clearing active stream", () => {
     const state = createState({
       sessionKey: "main",
