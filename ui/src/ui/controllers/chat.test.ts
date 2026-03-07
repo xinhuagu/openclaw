@@ -105,7 +105,24 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBeNull();
   });
 
-  it("does not suppress lowercase 'no' or 'Nothing' as delta prefix", () => {
+  it("does not suppress lowercase 'no' as delta prefix", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "delta",
+      message: { role: "assistant", content: [{ type: "text", text: "no" }] },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("delta");
+    expect(state.chatStream).toBe("no");
+  });
+
+  it("does not suppress mixed-case 'Nothing' as delta prefix", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
@@ -119,7 +136,6 @@ describe("handleChatEvent", () => {
     };
 
     expect(handleChatEvent(state, payload)).toBe("delta");
-    // Real content should still flow through
     expect(state.chatStream).toBe("Nothing to report");
   });
 

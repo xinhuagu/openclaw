@@ -32,6 +32,7 @@ function isSilentReplyPrefix(text: string): boolean {
   // Allow bare "NO" as a known prefix of NO_REPLY
   return trimmed === "NO";
 }
+
 /** Client-side defense-in-depth: detect assistant messages whose text is purely NO_REPLY. */
 function isAssistantSilentReply(message: unknown): boolean {
   if (!message || typeof message !== "object") {
@@ -299,7 +300,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage && !isAssistantSilentReply(finalMessage)) {
       state.chatMessages = [...state.chatMessages, finalMessage];
-    } else if (state.chatStream?.trim() && !isSilentReplyStream(state.chatStream)) {
+    } else if (
+      state.chatStream?.trim() &&
+      !isSilentReplyStream(state.chatStream) &&
+      !isSilentReplyPrefix(state.chatStream)
+    ) {
       state.chatMessages = [
         ...state.chatMessages,
         {
