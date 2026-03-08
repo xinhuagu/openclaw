@@ -1,6 +1,10 @@
 import { loadConfig, resolveGatewayPort } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
-import { resolveGatewayCredentialsFromConfig, trimToUndefined } from "../../gateway/credentials.js";
+import {
+  readGatewayTokenEnv,
+  resolveGatewayCredentialsFromConfig,
+  trimToUndefined,
+} from "../../gateway/credentials.js";
 import { resolveLeastPrivilegeOperatorScopesForMethod } from "../../gateway/method-scopes.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
 import { readStringParam } from "./common.js";
@@ -129,7 +133,7 @@ export function resolveGatewayOptions(opts?: GatewayCallOptions) {
         target: validatedOverride.target,
         explicitToken,
       })
-    : explicitToken;
+    : (explicitToken ?? readGatewayTokenEnv());
   const timeoutMs =
     typeof opts?.timeoutMs === "number" && Number.isFinite(opts.timeoutMs)
       ? Math.max(1, Math.floor(opts.timeoutMs))

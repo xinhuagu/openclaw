@@ -61,6 +61,24 @@ describe("gateway tool defaults", () => {
     );
   });
 
+  it("falls back to OPENCLAW_GATEWAY_TOKEN when no explicit token or URL override is given", () => {
+    process.env.OPENCLAW_GATEWAY_TOKEN = "env-fallback-token";
+    const opts = resolveGatewayOptions({});
+    expect(opts.token).toBe("env-fallback-token");
+  });
+
+  it("falls back to CLAWDBOT_GATEWAY_TOKEN (legacy) when OPENCLAW_GATEWAY_TOKEN is unset", () => {
+    process.env.CLAWDBOT_GATEWAY_TOKEN = "legacy-fallback-token";
+    const opts = resolveGatewayOptions({});
+    expect(opts.token).toBe("legacy-fallback-token");
+  });
+
+  it("prefers explicit gatewayToken over env fallback", () => {
+    process.env.OPENCLAW_GATEWAY_TOKEN = "env-token";
+    const opts = resolveGatewayOptions({ gatewayToken: "explicit-token" });
+    expect(opts.token).toBe("explicit-token");
+  });
+
   it("uses OPENCLAW_GATEWAY_TOKEN for allowlisted local overrides", () => {
     process.env.OPENCLAW_GATEWAY_TOKEN = "env-token";
     const opts = resolveGatewayOptions({ gatewayUrl: "ws://127.0.0.1:18789" });
