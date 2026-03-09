@@ -1,5 +1,8 @@
 import { createRequire } from "node:module";
-import { getApiKeyForModel, resolveApiKeyForProvider } from "../../agents/model-auth.js";
+import {
+  getApiKeyForModel as getApiKeyForModelRaw,
+  resolveApiKeyForProvider as resolveApiKeyForProviderRaw,
+} from "../../agents/model-auth.js";
 import { resolveStateDir } from "../../config/paths.js";
 import { transcribeAudioFile } from "../../media-understanding/transcribe-audio.js";
 import { textToSpeechTelephony } from "../../tts/tts.js";
@@ -60,7 +63,25 @@ export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): 
     events: createRuntimeEvents(),
     logging: createRuntimeLogging(),
     state: { resolveStateDir },
-    modelAuth: { getApiKeyForModel, resolveApiKeyForProvider },
+    modelAuth: {
+      // Wrap model-auth helpers to prevent plugins from passing arbitrary
+      // agentDir / store overrides, which would let them steer credential
+      // lookups outside their own context.  Only provider, model, cfg, and
+      // profileId are forwarded.
+      getApiKeyForModel: (params) =>
+        getApiKeyForModelRaw({
+          model: params.model,
+          cfg: params.cfg,
+          profileId: params.profileId,
+          preferredProfile: params.preferredProfile,
+        }),
+      resolveApiKeyForProvider: (params) =>
+        resolveApiKeyForProviderRaw({
+          provider: params.provider,
+          cfg: params.cfg,
+          profileId: params.profileId,
+        }),
+    },
   } satisfies PluginRuntime;
 
   return runtime;

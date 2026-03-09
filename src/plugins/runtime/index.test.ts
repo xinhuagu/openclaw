@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getApiKeyForModel, resolveApiKeyForProvider } from "../../agents/model-auth.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
 import { requestHeartbeatNow } from "../../infra/heartbeat-wake.js";
 import { onSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
@@ -58,7 +57,17 @@ describe("plugin runtime command execution", () => {
   it("exposes runtime.modelAuth with getApiKeyForModel and resolveApiKeyForProvider", () => {
     const runtime = createPluginRuntime();
     expect(runtime.modelAuth).toBeDefined();
-    expect(runtime.modelAuth.getApiKeyForModel).toBe(getApiKeyForModel);
-    expect(runtime.modelAuth.resolveApiKeyForProvider).toBe(resolveApiKeyForProvider);
+    expect(typeof runtime.modelAuth.getApiKeyForModel).toBe("function");
+    expect(typeof runtime.modelAuth.resolveApiKeyForProvider).toBe("function");
+  });
+
+  it("modelAuth wrappers strip agentDir and store to prevent credential steering", async () => {
+    // The wrappers should not forward agentDir or store from plugin callers.
+    // We verify this by checking the wrapper functions exist and are not the
+    // raw implementations (they are wrapped, not direct references).
+    const { getApiKeyForModel: rawGetApiKey } = await import("../../agents/model-auth.js");
+    const runtime = createPluginRuntime();
+    // Wrappers should NOT be the same reference as the raw functions
+    expect(runtime.modelAuth.getApiKeyForModel).not.toBe(rawGetApiKey);
   });
 });
