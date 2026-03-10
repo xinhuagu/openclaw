@@ -357,7 +357,7 @@ export async function spawnSubagentDirect(
         .map((value) => normalizeAgentId(value).toLowerCase()),
     );
     if (implicitAllow) {
-      runtime.warn(
+      console.warn(
         `[subagent-spawn] No explicit allowAgents configured for "${requesterAgentId}" — implicitly allowing spawn of configured agent "${normalizedTargetId}". Set subagents.allowAgents to restrict access.`,
       );
     }
