@@ -12,8 +12,13 @@ function ebusyError(): NodeJS.ErrnoException {
 
 describe("fs-retry", () => {
   let tmpDir: string;
-  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fs-retry-")); });
-  afterEach(() => { vi.restoreAllMocks(); fs.rmSync(tmpDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fs-retry-"));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
 
   it("writeFileSyncRetry succeeds on first attempt", () => {
     const p = path.join(tmpDir, "a.txt");
@@ -26,7 +31,9 @@ describe("fs-retry", () => {
     let n = 0;
     const orig = fs.writeFileSync;
     vi.spyOn(fs, "writeFileSync").mockImplementation((...a: unknown[]) => {
-      if (++n <= 2) throw ebusyError();
+      if (++n <= 2) {
+        throw ebusyError();
+      }
       return orig.call(fs, ...(a as Parameters<typeof fs.writeFileSync>));
     });
     writeFileSyncRetry(p, "ok", "utf8");
@@ -38,7 +45,9 @@ describe("fs-retry", () => {
   });
 
   it("writeFileSyncRetry throws after exhausting retries", () => {
-    vi.spyOn(fs, "writeFileSync").mockImplementation(() => { throw ebusyError(); });
+    vi.spyOn(fs, "writeFileSync").mockImplementation(() => {
+      throw ebusyError();
+    });
     expect(() => writeFileSyncRetry(path.join(tmpDir, "c"), "x", "utf8")).toThrow("EBUSY");
   });
 
@@ -47,7 +56,9 @@ describe("fs-retry", () => {
     let n = 0;
     const orig = fs.promises.writeFile;
     vi.spyOn(fs.promises, "writeFile").mockImplementation(async (...a: unknown[]) => {
-      if (++n === 1) throw ebusyError();
+      if (++n === 1) {
+        throw ebusyError();
+      }
       return orig.call(fs.promises, ...(a as Parameters<typeof fs.promises.writeFile>));
     });
     await writeFileRetry(p, "ok", "utf8");
@@ -60,7 +71,9 @@ describe("fs-retry", () => {
     let n = 0;
     const orig = fs.promises.appendFile;
     vi.spyOn(fs.promises, "appendFile").mockImplementation(async (...a: unknown[]) => {
-      if (++n <= 2) throw ebusyError();
+      if (++n <= 2) {
+        throw ebusyError();
+      }
       return orig.call(fs.promises, ...(a as Parameters<typeof fs.promises.appendFile>));
     });
     await appendFileRetry(p, "data", "utf8");
@@ -68,7 +81,8 @@ describe("fs-retry", () => {
   });
 
   it("renameRetry succeeds on first attempt", async () => {
-    const src = path.join(tmpDir, "s.txt"), dest = path.join(tmpDir, "d.txt");
+    const src = path.join(tmpDir, "s.txt"),
+      dest = path.join(tmpDir, "d.txt");
     fs.writeFileSync(src, "data", "utf8");
     await renameRetry(src, dest);
     expect(fs.readFileSync(dest, "utf8")).toBe("data");
@@ -76,12 +90,15 @@ describe("fs-retry", () => {
   });
 
   it("renameRetry retries EBUSY then succeeds", async () => {
-    const src = path.join(tmpDir, "s2.txt"), dest = path.join(tmpDir, "d2.txt");
+    const src = path.join(tmpDir, "s2.txt"),
+      dest = path.join(tmpDir, "d2.txt");
     fs.writeFileSync(src, "data", "utf8");
     let n = 0;
     const orig = fs.promises.rename;
     vi.spyOn(fs.promises, "rename").mockImplementation(async (...a: unknown[]) => {
-      if (++n === 1) throw ebusyError();
+      if (++n === 1) {
+        throw ebusyError();
+      }
       return orig.call(fs.promises, ...(a as Parameters<typeof fs.promises.rename>));
     });
     await renameRetry(src, dest);

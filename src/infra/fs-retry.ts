@@ -13,9 +13,7 @@ import os from "node:os";
 
 /** On Windows EACCES/EPERM are transient lock errors; on POSIX they are real. */
 const RETRYABLE =
-  os.platform() === "win32"
-    ? new Set(["EBUSY", "EACCES", "EPERM"])
-    : new Set(["EBUSY"]);
+  os.platform() === "win32" ? new Set(["EBUSY", "EACCES", "EPERM"]) : new Set(["EBUSY"]);
 const MAX = 3;
 const BASE_MS = 50;
 
@@ -101,7 +99,9 @@ export async function renameRetry(src: string, dest: string): Promise<void> {
           throw new Error(`Refusing to write through symlink: ${dest}`, { cause: err });
         }
       } catch (e: unknown) {
-        if ((e as { code?: string }).code !== "ENOENT") throw e as Error;
+        if ((e as { code?: string }).code !== "ENOENT") {
+          throw e as Error;
+        }
       }
       await fs.promises.copyFile(src, dest);
       await fs.promises.unlink(src).catch(() => {});
