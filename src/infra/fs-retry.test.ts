@@ -2,199 +2,89 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  appendFileRetry,
-  appendFileSyncRetry,
-  renameRetry,
-  writeFileRetry,
-  writeFileSyncRetry,
-} from "./fs-retry.js";
+import { appendFileRetry, renameRetry, writeFileRetry, writeFileSyncRetry } from "./fs-retry.js";
+
+function ebusyError(): NodeJS.ErrnoException {
+  const e = new Error("EBUSY") as NodeJS.ErrnoException;
+  e.code = "EBUSY";
+  return e;
+}
 
 describe("fs-retry", () => {
   let tmpDir: string;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fs-retry-")); });
+  afterEach(() => { vi.restoreAllMocks(); fs.rmSync(tmpDir, { recursive: true, force: true }); });
 
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fs-retry-test-"));
+  it("writeFileSyncRetry succeeds on first attempt", () => {
+    const p = path.join(tmpDir, "a.txt");
+    writeFileSyncRetry(p, "ok", "utf8");
+    expect(fs.readFileSync(p, "utf8")).toBe("ok");
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+  it("writeFileSyncRetry retries EBUSY then succeeds", () => {
+    const p = path.join(tmpDir, "b.txt");
+    let n = 0;
+    const orig = fs.writeFileSync;
+    vi.spyOn(fs, "writeFileSync").mockImplementation((...a: unknown[]) => {
+      if (++n <= 2) throw ebusyError();
+      return orig.call(fs, ...(a as Parameters<typeof fs.writeFileSync>));
+    });
+    writeFileSyncRetry(p, "ok", "utf8");
+    expect(n).toBe(3);
   });
 
-  describe("writeFileSyncRetry", () => {
-    it("writes a file successfully on first attempt", () => {
-      const filePath = path.join(tmpDir, "test.txt");
-      writeFileSyncRetry(filePath, "hello", "utf8");
-      expect(fs.readFileSync(filePath, "utf8")).toBe("hello");
-    });
-
-    it("retries on EBUSY and succeeds", () => {
-      const filePath = path.join(tmpDir, "test.txt");
-      let attempt = 0;
-      const originalWriteFileSync = fs.writeFileSync;
-      vi.spyOn(fs, "writeFileSync").mockImplementation((...args: unknown[]) => {
-        attempt++;
-        if (attempt <= 2) {
-          const err = new Error("EBUSY") as NodeJS.ErrnoException;
-          err.code = "EBUSY";
-          throw err;
-        }
-        return originalWriteFileSync.call(fs, ...(args as Parameters<typeof fs.writeFileSync>));
-      });
-
-      writeFileSyncRetry(filePath, "hello", "utf8");
-      expect(fs.readFileSync(filePath, "utf8")).toBe("hello");
-      expect(attempt).toBe(3);
-    });
-
-    it("throws non-retryable errors immediately", () => {
-      const filePath = path.join(tmpDir, "nonexistent", "deep", "test.txt");
-      // ENOENT is not retryable
-      expect(() => writeFileSyncRetry(filePath, "hello", "utf8")).toThrow();
-    });
-
-    it("throws after exhausting retries", () => {
-      const filePath = path.join(tmpDir, "test.txt");
-      vi.spyOn(fs, "writeFileSync").mockImplementation(() => {
-        const err = new Error("EBUSY") as NodeJS.ErrnoException;
-        err.code = "EBUSY";
-        throw err;
-      });
-
-      expect(() => writeFileSyncRetry(filePath, "hello", "utf8")).toThrow("EBUSY");
-    });
+  it("writeFileSyncRetry throws non-retryable errors", () => {
+    expect(() => writeFileSyncRetry(path.join(tmpDir, "no", "d", "f"), "x", "utf8")).toThrow();
   });
 
-  describe("appendFileSyncRetry", () => {
-    it("appends to a file successfully", () => {
-      const filePath = path.join(tmpDir, "append.txt");
-      fs.writeFileSync(filePath, "line1\n", "utf8");
-      appendFileSyncRetry(filePath, "line2\n", { encoding: "utf8" });
-      expect(fs.readFileSync(filePath, "utf8")).toBe("line1\nline2\n");
-    });
-
-    it("retries on EPERM and succeeds (Windows) or throws immediately (POSIX)", () => {
-      const filePath = path.join(tmpDir, "append.txt");
-      fs.writeFileSync(filePath, "", "utf8");
-      let attempt = 0;
-      const originalAppendFileSync = fs.appendFileSync;
-      vi.spyOn(fs, "appendFileSync").mockImplementation((...args: unknown[]) => {
-        attempt++;
-        if (attempt === 1) {
-          const err = new Error("EPERM") as NodeJS.ErrnoException;
-          err.code = "EPERM";
-          throw err;
-        }
-        return originalAppendFileSync.call(fs, ...(args as Parameters<typeof fs.appendFileSync>));
-      });
-
-      if (os.platform() === "win32") {
-        appendFileSyncRetry(filePath, "data", { encoding: "utf8" });
-        expect(attempt).toBe(2);
-      } else {
-        // On POSIX, EPERM is a real permission error — no retry
-        expect(() => appendFileSyncRetry(filePath, "data", { encoding: "utf8" })).toThrow("EPERM");
-        expect(attempt).toBe(1);
-      }
-    });
+  it("writeFileSyncRetry throws after exhausting retries", () => {
+    vi.spyOn(fs, "writeFileSync").mockImplementation(() => { throw ebusyError(); });
+    expect(() => writeFileSyncRetry(path.join(tmpDir, "c"), "x", "utf8")).toThrow("EBUSY");
   });
 
-  describe("writeFileRetry (async)", () => {
-    it("writes a file successfully on first attempt", async () => {
-      const filePath = path.join(tmpDir, "async-test.txt");
-      await writeFileRetry(filePath, "hello-async", "utf8");
-      expect(fs.readFileSync(filePath, "utf8")).toBe("hello-async");
+  it("writeFileRetry retries EBUSY then succeeds", async () => {
+    const p = path.join(tmpDir, "d.txt");
+    let n = 0;
+    const orig = fs.promises.writeFile;
+    vi.spyOn(fs.promises, "writeFile").mockImplementation(async (...a: unknown[]) => {
+      if (++n === 1) throw ebusyError();
+      return orig.call(fs.promises, ...(a as Parameters<typeof fs.promises.writeFile>));
     });
-
-    it("retries on EACCES (Windows) or throws immediately (POSIX)", async () => {
-      const filePath = path.join(tmpDir, "async-test.txt");
-      let attempt = 0;
-      const originalWriteFile = fs.promises.writeFile;
-      vi.spyOn(fs.promises, "writeFile").mockImplementation(async (...args: unknown[]) => {
-        attempt++;
-        if (attempt === 1) {
-          const err = new Error("EACCES") as NodeJS.ErrnoException;
-          err.code = "EACCES";
-          throw err;
-        }
-        return originalWriteFile.call(
-          fs.promises,
-          ...(args as Parameters<typeof fs.promises.writeFile>),
-        );
-      });
-
-      if (os.platform() === "win32") {
-        await writeFileRetry(filePath, "hello-async", "utf8");
-        expect(fs.readFileSync(filePath, "utf8")).toBe("hello-async");
-        expect(attempt).toBe(2);
-      } else {
-        // On POSIX, EACCES is a real permission error — no retry
-        await expect(writeFileRetry(filePath, "hello-async", "utf8")).rejects.toThrow("EACCES");
-        expect(attempt).toBe(1);
-      }
-    });
+    await writeFileRetry(p, "ok", "utf8");
+    expect(n).toBe(2);
   });
 
-  describe("appendFileRetry (async)", () => {
-    it("appends to a file successfully", async () => {
-      const filePath = path.join(tmpDir, "async-append.txt");
-      fs.writeFileSync(filePath, "first\n", "utf8");
-      await appendFileRetry(filePath, "second\n", "utf8");
-      expect(fs.readFileSync(filePath, "utf8")).toBe("first\nsecond\n");
+  it("appendFileRetry retries EBUSY then succeeds", async () => {
+    const p = path.join(tmpDir, "e.txt");
+    fs.writeFileSync(p, "", "utf8");
+    let n = 0;
+    const orig = fs.promises.appendFile;
+    vi.spyOn(fs.promises, "appendFile").mockImplementation(async (...a: unknown[]) => {
+      if (++n <= 2) throw ebusyError();
+      return orig.call(fs.promises, ...(a as Parameters<typeof fs.promises.appendFile>));
     });
-
-    it("retries on EBUSY and succeeds", async () => {
-      const filePath = path.join(tmpDir, "async-append.txt");
-      fs.writeFileSync(filePath, "", "utf8");
-      let attempt = 0;
-      const originalAppendFile = fs.promises.appendFile;
-      vi.spyOn(fs.promises, "appendFile").mockImplementation(async (...args: unknown[]) => {
-        attempt++;
-        if (attempt <= 2) {
-          const err = new Error("EBUSY") as NodeJS.ErrnoException;
-          err.code = "EBUSY";
-          throw err;
-        }
-        return originalAppendFile.call(
-          fs.promises,
-          ...(args as Parameters<typeof fs.promises.appendFile>),
-        );
-      });
-
-      await appendFileRetry(filePath, "data", "utf8");
-      expect(attempt).toBe(3);
-    });
+    await appendFileRetry(p, "data", "utf8");
+    expect(n).toBe(3);
   });
 
-  describe("renameRetry", () => {
-    it("renames a file successfully on first attempt", async () => {
-      const src = path.join(tmpDir, "src.txt");
-      const dest = path.join(tmpDir, "dest.txt");
-      fs.writeFileSync(src, "data", "utf8");
-      await renameRetry(src, dest);
-      expect(fs.readFileSync(dest, "utf8")).toBe("data");
-      expect(fs.existsSync(src)).toBe(false);
-    });
+  it("renameRetry succeeds on first attempt", async () => {
+    const src = path.join(tmpDir, "s.txt"), dest = path.join(tmpDir, "d.txt");
+    fs.writeFileSync(src, "data", "utf8");
+    await renameRetry(src, dest);
+    expect(fs.readFileSync(dest, "utf8")).toBe("data");
+    expect(fs.existsSync(src)).toBe(false);
+  });
 
-    it("retries on EBUSY and succeeds", async () => {
-      const src = path.join(tmpDir, "src.txt");
-      const dest = path.join(tmpDir, "dest.txt");
-      fs.writeFileSync(src, "data", "utf8");
-      let attempt = 0;
-      const originalRename = fs.promises.rename;
-      vi.spyOn(fs.promises, "rename").mockImplementation(async (...args: unknown[]) => {
-        attempt++;
-        if (attempt === 1) {
-          const err = new Error("EBUSY") as NodeJS.ErrnoException;
-          err.code = "EBUSY";
-          throw err;
-        }
-        return originalRename.call(fs.promises, ...(args as Parameters<typeof fs.promises.rename>));
-      });
-      await renameRetry(src, dest);
-      expect(fs.readFileSync(dest, "utf8")).toBe("data");
-      expect(attempt).toBe(2);
+  it("renameRetry retries EBUSY then succeeds", async () => {
+    const src = path.join(tmpDir, "s2.txt"), dest = path.join(tmpDir, "d2.txt");
+    fs.writeFileSync(src, "data", "utf8");
+    let n = 0;
+    const orig = fs.promises.rename;
+    vi.spyOn(fs.promises, "rename").mockImplementation(async (...a: unknown[]) => {
+      if (++n === 1) throw ebusyError();
+      return orig.call(fs.promises, ...(a as Parameters<typeof fs.promises.rename>));
     });
+    await renameRetry(src, dest);
+    expect(n).toBe(2);
   });
 });

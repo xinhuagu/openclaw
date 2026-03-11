@@ -2,9 +2,8 @@
  * File-system write helpers that retry on transient lock errors
  * (EBUSY / EACCES / EPERM) instead of crashing the process.
  *
- * These errors commonly occur when cloud-sync services (OneDrive,
- * Dropbox, Google Drive, Baidu Netdisk) temporarily lock files
- * during upload/download.
+ * Cloud-sync services (OneDrive, Dropbox, Google Drive, Baidu Netdisk)
+ * temporarily lock files during upload/download, causing these errors.
  *
  * @see https://github.com/openclaw/openclaw/issues/39446
  */
@@ -12,149 +11,102 @@
 import fs from "node:fs";
 import os from "node:os";
 
-/**
- * On Windows, EACCES/EPERM are commonly transient lock errors from
- * AV/cloud-sync. On Linux/macOS they indicate real permission errors
- * and should not be retried.
- */
-const RETRYABLE_CODES_WIN = new Set(["EBUSY", "EACCES", "EPERM"]);
-const RETRYABLE_CODES_POSIX = new Set(["EBUSY"]);
-const RETRYABLE_CODES = os.platform() === "win32" ? RETRYABLE_CODES_WIN : RETRYABLE_CODES_POSIX;
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 50;
+/** On Windows EACCES/EPERM are transient lock errors; on POSIX they are real. */
+const RETRYABLE =
+  os.platform() === "win32"
+    ? new Set(["EBUSY", "EACCES", "EPERM"])
+    : new Set(["EBUSY"]);
+const MAX = 3;
+const BASE_MS = 50;
 
-function isRetryableError(err: unknown): boolean {
-  return RETRYABLE_CODES.has((err as { code?: string }).code ?? "");
+function isRetryable(err: unknown): boolean {
+  return RETRYABLE.has((err as { code?: string }).code ?? "");
 }
 
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-/**
- * `fs.writeFileSync` with retry on transient lock errors.
- * Throws the original error after exhausting all retries.
- */
+function retrySync<T>(fn: () => T): T {
+  for (let i = 0; i <= MAX; i++) {
+    try {
+      return fn();
+    } catch (err) {
+      if (isRetryable(err) && i < MAX) {
+        sleepSync(BASE_MS * 2 ** i);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("unreachable");
+}
+
+async function retryAsync<T>(fn: () => Promise<T>): Promise<T> {
+  for (let i = 0; i <= MAX; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isRetryable(err) && i < MAX) {
+        await new Promise((r) => setTimeout(r, BASE_MS * 2 ** i));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("unreachable");
+}
+
+/** `fs.writeFileSync` with retry on transient lock errors. */
 export function writeFileSyncRetry(
-  filePath: string,
+  p: string,
   data: string | Buffer,
-  options?: fs.WriteFileOptions,
+  opts?: fs.WriteFileOptions,
 ): void {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      fs.writeFileSync(filePath, data, options);
-      return;
-    } catch (err) {
-      if (isRetryableError(err) && attempt < MAX_RETRIES) {
-        sleepSync(BASE_DELAY_MS * 2 ** attempt);
-        continue;
-      }
-      throw err;
-    }
-  }
+  retrySync(() => fs.writeFileSync(p, data, opts));
 }
 
-/**
- * `fs.appendFileSync` with retry on transient lock errors.
- * Throws the original error after exhausting all retries.
- */
-export function appendFileSyncRetry(
-  filePath: string,
+/** Async `fs.promises.writeFile` with retry. */
+export function writeFileRetry(
+  p: string,
   data: string | Buffer,
-  options?: fs.WriteFileOptions,
-): void {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      fs.appendFileSync(filePath, data, options);
-      return;
-    } catch (err) {
-      if (isRetryableError(err) && attempt < MAX_RETRIES) {
-        sleepSync(BASE_DELAY_MS * 2 ** attempt);
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-/**
- * Async `fs.promises.appendFile` with retry on transient lock errors.
- */
-export async function appendFileRetry(
-  filePath: string,
-  data: string | Buffer,
-  options?: Parameters<typeof fs.promises.appendFile>[2],
+  opts?: Parameters<typeof fs.promises.writeFile>[2],
 ): Promise<void> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await fs.promises.appendFile(filePath, data, options);
-      return;
-    } catch (err) {
-      if (isRetryableError(err) && attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, BASE_DELAY_MS * 2 ** attempt));
-        continue;
-      }
-      throw err;
-    }
-  }
+  return retryAsync(() => fs.promises.writeFile(p, data, opts));
 }
 
-/**
- * Async `fs.promises.writeFile` with retry on transient lock errors.
- */
-export async function writeFileRetry(
-  filePath: string,
+/** Async `fs.promises.appendFile` with retry. */
+export function appendFileRetry(
+  p: string,
   data: string | Buffer,
-  options?: Parameters<typeof fs.promises.writeFile>[2],
+  opts?: Parameters<typeof fs.promises.appendFile>[2],
 ): Promise<void> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await fs.promises.writeFile(filePath, data, options);
-      return;
-    } catch (err) {
-      if (isRetryableError(err) && attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, BASE_DELAY_MS * 2 ** attempt));
-        continue;
-      }
-      throw err;
-    }
-  }
+  return retryAsync(() => fs.promises.appendFile(p, data, opts));
 }
 
 /**
- * Async `fs.promises.rename` with retry on transient lock errors.
- * Falls back to copy + unlink on Windows when rename fails with EPERM/EEXIST.
+ * Async `fs.promises.rename` with retry.
+ * Falls back to copy+unlink on Windows when rename fails with EPERM/EEXIST.
  */
 export async function renameRetry(src: string, dest: string): Promise<void> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await fs.promises.rename(src, dest);
-      return;
-    } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code && RETRYABLE_CODES.has(code) && attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, BASE_DELAY_MS * 2 ** attempt));
-        continue;
-      }
-      // Windows fallback: copy + unlink when rename fails (EPERM on
-      // non-Windows is a real permission error, not a transient lock)
-      if ((code === "EPERM" || code === "EEXIST") && os.platform() === "win32") {
-        // Refuse to overwrite symlinks to prevent arbitrary file writes (CWE-59)
-        try {
-          const st = await fs.promises.lstat(dest);
-          if (st.isSymbolicLink()) {
-            throw new Error(`Refusing to write through symlink: ${dest}`, { cause: err });
-          }
-        } catch (e: unknown) {
-          if ((e as { code?: string }).code !== "ENOENT") {
-            throw e as Error;
-          }
+  try {
+    return await retryAsync(() => fs.promises.rename(src, dest));
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if ((code === "EPERM" || code === "EEXIST") && os.platform() === "win32") {
+      // Refuse to overwrite symlinks (CWE-59)
+      try {
+        const st = await fs.promises.lstat(dest);
+        if (st.isSymbolicLink()) {
+          throw new Error(`Refusing to write through symlink: ${dest}`, { cause: err });
         }
-        await fs.promises.copyFile(src, dest);
-        await fs.promises.unlink(src).catch(() => {});
-        return;
+      } catch (e: unknown) {
+        if ((e as { code?: string }).code !== "ENOENT") throw e as Error;
       }
-      throw err;
+      await fs.promises.copyFile(src, dest);
+      await fs.promises.unlink(src).catch(() => {});
+      return;
     }
+    throw err;
   }
 }
