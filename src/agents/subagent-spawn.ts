@@ -362,17 +362,22 @@ export async function spawnSubagentDirect(
       );
     }
     if (!allowAny && !implicitAllow && !allowSet.has(normalizedTargetId)) {
-      const effectiveAllowed =
-        allowAgentsRaw === undefined
+      // Only reveal the allowlist to configured requesters to avoid
+      // agent inventory disclosure to unknown/unconfigured callers (CWE-200).
+      const canRevealAllowlist = requesterConfig !== undefined;
+      const effectiveAllowed = canRevealAllowlist
+        ? allowAgentsRaw === undefined
           ? configuredIds
           : allowSet.size > 0
             ? Array.from(allowSet)
-            : [];
+            : []
+        : [];
       const allowedText = effectiveAllowed.length > 0 ? effectiveAllowed.join(", ") : "none";
-      const hint =
-        allowAgentsRaw === undefined
+      const hint = canRevealAllowlist
+        ? allowAgentsRaw === undefined
           ? ` (no allowAgents configured — only configured agents are allowed: ${allowedText})`
-          : ` (allowed: ${allowedText})`;
+          : ` (allowed: ${allowedText})`
+        : "";
       return {
         status: "forbidden",
         error: `Agent "${targetAgentId}" is not allowed for sessions_spawn${hint}`,
